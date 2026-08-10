@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Keeps the pinned Alpine digest in the Dockerfile fresh.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

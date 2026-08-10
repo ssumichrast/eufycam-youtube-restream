@@ -1,0 +1,15 @@
+# Keep secrets and anything not needed to build the image out of the build
+# context. .env holds the camera password and YouTube stream key.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.gitignore
+
+deploy
+compose.yaml
+README.md
+CLAUDE.md
+LICENSE

@@ -1,0 +1,14 @@
+# Never commit this: it holds the camera password and the YouTube stream key.
+.env
+.env.*
+!.env.example
+
+# Local Kubernetes secrets rendered from the example
+deploy/k8s/secret.yaml
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

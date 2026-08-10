@@ -1,0 +1,67 @@
+name: CI
+
+# Lints and proves the image builds. Never pushes -- publishing is release.yml.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint shell + Dockerfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck entrypoint
+        uses: ludeeus/action-shellcheck@master
+        env:
+          SHELLCHECK_OPTS: -s bash
+        with:
+          scandir: ./rootfs/usr/local/bin
+
+      - name: Hadolint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  build:
+    name: Build image (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # amd64 only here to keep PR feedback fast; release.yml does multi-arch.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: eufycam-youtube-restream:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test the image
+        run: |
+          # Runs as the non-root user we created. --entrypoint is required:
+          # the image's entrypoint ignores CMD args.
+          test "$(docker run --rm --entrypoint id eufycam-youtube-restream:ci -u)" = "10001"
+
+          # Missing required config must fail fast with a clear message,
+          # not start ffmpeg against a garbage URL.
+          if docker run --rm eufycam-youtube-restream:ci; then
+            echo "expected a non-zero exit when required env vars are unset" >&2
+            exit 1
+          fi
+
+          # ffmpeg and the tools the entrypoint depends on are present.
+          docker run --rm --entrypoint sh eufycam-youtube-restream:ci -c \
+            'command -v ffmpeg && command -v ffprobe && command -v timeout && command -v bash'

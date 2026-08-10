@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eufycam-youtube-restream
+  labels:
+    app.kubernetes.io/name: eufycam-youtube-restream
+spec:
+  # Must stay 1. Two replicas would push two ffmpeg sessions to the same
+  # YouTube stream key, which YouTube rejects or flaps between.
+  replicas: 1
+  # Recreate, not RollingUpdate, for the same reason: never run the old and
+  # new pod at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: eufycam-youtube-restream
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eufycam-youtube-restream
+    spec:
+      # The entrypoint traps SIGTERM and forwards it to ffmpeg, so shutdown
+      # is quick; this is headroom for ffmpeg flushing to YouTube.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: restream
+          # Pin to a released version rather than :latest so a redeploy is
+          # never a surprise upgrade.
+          image: ghcr.io/ssumichrast/eufycam-youtube-restream:1.0.0
+          imagePullPolicy: IfNotPresent
+
+          # The five required variables, plus any optional overrides.
+          envFrom:
+            - secretRef:
+                name: eufycam-youtube-restream
+
+          # Optional tuning can go here instead of in the Secret -- these
+          # aren't sensitive. See .env.example for the full list.
+          # env:
+          #   - name: VIDEO_MODE
+          #     value: "encode"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              # VIDEO_MODE=copy barely uses CPU. If you switch to
+              # VIDEO_MODE=encode, raise this to at least 1000m.
+              cpu: 500m
+              memory: 256Mi
+
+      # Deliberately no livenessProbe. entrypoint.sh already supervises and
+      # restarts ffmpeg in-container; a probe that restarts the pod would
+      # duplicate that and cause pod churn on every transient stream drop.
+      # (Docker's HEALTHCHECK in the image is ignored by Kubernetes.)
