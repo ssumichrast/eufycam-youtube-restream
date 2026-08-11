@@ -8,7 +8,11 @@ LABEL org.opencontainers.image.title="eufycam-youtube-restream" \
       org.opencontainers.image.licenses="MIT"
 
 # ffmpeg: the actual work. bash: the entrypoint uses arrays and traps.
-# coreutils: `timeout` for the audio probe. tzdata: readable log timestamps.
+# tzdata: readable log timestamps.
+#
+# No coreutils: it was only here for `timeout`, which the removed audio probe
+# used. BusyBox covers everything the script needs now (verified: `date -u
+# +%FT%TZ` works without it).
 #
 # DL3018 (pin apk versions) is ignored deliberately: Alpine repositories drop
 # older package versions as they're superseded, so pinned versions turn into
@@ -18,7 +22,6 @@ LABEL org.opencontainers.image.title="eufycam-youtube-restream" \
 RUN apk add --no-cache \
       ffmpeg \
       bash \
-      coreutils \
       tzdata
 
 # Nothing here needs root -- RTSP and RTMP are both outbound and no port is

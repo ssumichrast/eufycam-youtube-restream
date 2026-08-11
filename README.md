@@ -66,11 +66,10 @@ any is missing.
 |---|---|---|
 | `VIDEO_MODE` | `copy` | `copy` passes video through untouched (almost no CPU). `encode` transcodes to H.264 — needed if your camera emits H.265/HEVC, which YouTube Live rejects. |
 | `VIDEO_BITRATE` | `4000k` | Target bitrate. Only used when `VIDEO_MODE=encode`. |
-| `AUDIO_MODE` | `auto` | `auto` probes the camera and picks `aac` or `silent`. `aac` always maps camera audio, `silent` always inserts a silent track, `none` sends no audio track at all (not recommended — YouTube expects one). |
+| `AUDIO_MODE` | `silent` | Chooses the stand-in audio track — **never** the camera's microphone (see [Audio](#audio)). `silent` inserts a generated silent track; `none` sends no audio track at all, which YouTube will often refuse to go live with. |
 | `RTSP_TRANSPORT` | `tcp` | `tcp` or `udp`. TCP is more reliable on most home networks. |
 | `RETRY_DELAY_SECONDS` | `10` | How long to wait before restarting ffmpeg after it exits. |
 | `IO_TIMEOUT_US` | `15000000` | RTSP socket I/O timeout in **microseconds** (15s). If the camera stops sending, ffmpeg gives up after this and the supervisor restarts it. |
-| `PROBE_TIMEOUT_SECONDS` | `10` | How long `AUDIO_MODE=auto` waits when probing for an audio track. |
 
 ## How it works
 
@@ -80,14 +79,25 @@ any is missing.
   churn the container.
 - `restart: unless-stopped` is a second safety net for the container process
   itself dying (e.g. OOM). The two mechanisms cover different failure modes.
-- Video is copied by default (no re-encode, minimal CPU). Audio is
-  auto-detected: if the camera offers a track it's transcoded to AAC (required
-  for RTMP/FLV — most cams emit PCM, which isn't valid there); if there's no
-  track, a silent AAC one is inserted, since YouTube Live expects audio to be
-  present.
+- Video is copied by default (no re-encode, minimal CPU). Audio is a generated
+  silent track — the camera's microphone is never streamed (see
+  [Audio](#audio)).
 - `SIGTERM`/`SIGINT` are forwarded to ffmpeg, so `docker stop` and
   `kubectl delete pod` shut down promptly instead of waiting out the grace
   period.
+
+## Audio
+
+**The camera's microphone is never captured, mapped, or transmitted.** ffmpeg
+reads only the video stream from the camera; the audio that reaches YouTube is
+a silent track generated locally by `anullsrc`.
+
+That silent track exists because YouTube Live expects an audio stream to be
+present — a track-less stream frequently won't go live at all. `AUDIO_MODE=none`
+removes it entirely if you want to test that on your own channel.
+
+This is enforced in the code, not just by configuration: there is no code path
+that maps camera audio, and CI fails the build if one is reintroduced.
 
 ## Image tags
 
@@ -115,6 +125,9 @@ itself).
 
 ## Security
 
+- **The camera's microphone is never streamed.** Only its video stream is
+  read; the audio on the broadcast is locally generated silence. See
+  [Audio](#audio).
 - **Credentials only ever arrive as environment variables.** Nothing is baked
   into the image, and `.dockerignore` keeps `.env` out of the build context.
 - **Logs are scrubbed.** ffmpeg echoes the full URL in its error messages,
@@ -148,8 +161,9 @@ itself).
   common case).
 - **YouTube rejects the video** — your camera is probably H.265/HEVC. Set
   `VIDEO_MODE=encode`.
-- **No audio on YouTube** — leave `AUDIO_MODE=auto` and check which mode it
-  resolved to in the logs (`audio: aac` vs `audio: silent`).
+- **No audio on YouTube** — expected. The stream carries a silent track by
+  design; see [Audio](#audio). If YouTube reports *no audio stream at all*,
+  check that `AUDIO_MODE` isn't set to `none`.
 
 ## Repository layout
 

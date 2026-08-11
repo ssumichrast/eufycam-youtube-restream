@@ -21,10 +21,9 @@ set -uo pipefail  # NOTE: no -e, we handle ffmpeg's non-zero exits ourselves
 RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-10}"
 RTSP_TRANSPORT="${RTSP_TRANSPORT:-tcp}"
 VIDEO_MODE="${VIDEO_MODE:-copy}"        # copy | encode
-AUDIO_MODE="${AUDIO_MODE:-auto}"        # auto | aac | silent | none
+AUDIO_MODE="${AUDIO_MODE:-silent}"      # silent | none
 VIDEO_BITRATE="${VIDEO_BITRATE:-4000k}"
 IO_TIMEOUT_US="${IO_TIMEOUT_US:-15000000}"   # 15s read/write timeout, microseconds
-PROBE_TIMEOUT_SECONDS="${PROBE_TIMEOUT_SECONDS:-10}"
 
 # ---------------------------------------------------------------------------
 # Build the RTSP URL (URL-encode user/pass so special characters don't
@@ -97,20 +96,6 @@ term_handler() {
 }
 trap term_handler SIGTERM SIGINT
 
-# ---------------------------------------------------------------------------
-# Detect whether the camera is currently offering an audio stream.
-# YouTube Live expects an audio track even if it's silent, and many RTSP
-# cameras use PCM audio codecs that aren't valid in FLV/RTMP, so this
-# lets AUDIO_MODE=auto pick the right behavior automatically.
-# ---------------------------------------------------------------------------
-check_audio_present() {
-  timeout "$PROBE_TIMEOUT_SECONDS" ffprobe -v error \
-    -rtsp_transport "$RTSP_TRANSPORT" \
-    -timeout "$IO_TIMEOUT_US" \
-    -select_streams a -show_entries stream=index -of csv=p=0 \
-    "$RTSP_URL" 2>/dev/null
-}
-
 run_once() {
   local video_args=(-c:v copy)
   if [[ "$VIDEO_MODE" == "encode" ]]; then
@@ -129,39 +114,30 @@ run_once() {
   # replaying files as if they were live. On an already-realtime RTSP source
   # it only adds latency and lets input buffers grow.
   local input_args=(-rtsp_transport "$RTSP_TRANSPORT" -timeout "$IO_TIMEOUT_US" -i "$RTSP_URL")
+  # Note there is no `-map 0:a` anywhere below: the camera's microphone is
+  # never captured, mapped, or transmitted. Only the video stream is read
+  # from the camera. See CLAUDE.md before reintroducing an audio path.
   local map_args=(-map 0:v:0)
   local audio_args=()
-  local resolved_audio_mode="$AUDIO_MODE"
 
-  if [[ "$AUDIO_MODE" == "auto" ]]; then
-    if [[ -n "$(check_audio_present)" ]]; then
-      resolved_audio_mode="aac"
-    else
-      resolved_audio_mode="silent"
-    fi
-  fi
-
-  case "$resolved_audio_mode" in
+  case "$AUDIO_MODE" in
     none)
+      # No audio track at all. YouTube Live expects one, so this will often
+      # fail to go live -- kept only as an escape hatch.
       audio_args=(-an)
       ;;
-    silent)
-      echo "[entrypoint] No audio track on camera (or AUDIO_MODE=silent) -- inserting silence."
+    silent|*)
+      # A generated silent track, not the camera's. YouTube Live expects an
+      # audio stream to exist, and a track-less stream frequently won't go
+      # live, so this is the default and the fallback for any unrecognized
+      # AUDIO_MODE -- an unknown value should land on the path that works.
       input_args+=(-f lavfi -i "anullsrc=channel_layout=stereo:sample_rate=44100")
       map_args+=(-map 1:a:0)
       audio_args=(-c:a aac -b:a 128k -shortest)
       ;;
-    aac|*)
-      # Camera audio is re-encoded to AAC (most cams emit PCM, which isn't
-      # valid in FLV/RTMP). No aac_adtstoasc here: that bitstream filter
-      # converts ADTS framing to ASC and is only meaningful when *copying*
-      # AAC from an ADTS source, not when re-encoding.
-      map_args+=(-map 0:a:0)
-      audio_args=(-c:a aac -b:a 128k -ar 44100)
-      ;;
   esac
 
-  echo "[entrypoint] $(date -u +%FT%TZ) starting ffmpeg (audio: ${resolved_audio_mode})..."
+  echo "[entrypoint] $(date -u +%FT%TZ) starting ffmpeg (audio: ${AUDIO_MODE}, camera audio not streamed)..."
   # Output goes through redact() via process substitution rather than a
   # pipeline, so $! is ffmpeg's own PID and the SIGTERM forwarding above
   # keeps working.

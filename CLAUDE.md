@@ -60,13 +60,21 @@ config file, or a hardcoded default.
   If you change the supervisor loop structure, keep this working —
   test with `docker compose stop` and confirm it doesn't hang until the
   kill timeout.
-- **Audio auto-detection.** `AUDIO_MODE=auto` (the default) probes the
-  camera with `ffprobe` and picks `aac` (transcode camera audio) or
-  `silent` (insert `anullsrc`) accordingly, because YouTube Live
-  expects an audio track to exist even when the source has none. Don't
-  remove this without keeping some equivalent fallback — a camera with
-  no audio and no inserted silence is a real failure mode users will
-  hit.
+- **Camera audio is never streamed. This is deliberate.** The script
+  maps only `0:v:0` from the camera and pairs it with a locally
+  generated `anullsrc` silent track. Do not add a `-map 0:a` path, an
+  `AUDIO_MODE=aac`, or an audio probe back in — the owner explicitly
+  does not want the microphone captured or transmitted, and CI fails
+  the build if `-map 0:a` reappears in the entrypoint. The silent track
+  itself must stay: YouTube Live expects an audio stream to exist and a
+  track-less stream often won't go live, which is why `silent` is both
+  the default and the fallback for an unrecognized `AUDIO_MODE`.
+  (`AUDIO_MODE=none` is a deliberate escape hatch, not the default.)
+  This replaced an earlier auto-detect-and-transcode design; removing
+  it also removed the `ffprobe` probe, `PROBE_TIMEOUT_SECONDS`, an
+  `aresample=async=1` workaround for the camera's drifting audio
+  clock, and the `coreutils` package (the probe was the only user of
+  `timeout`).
 - **Credential URL-encoding.** Username/password are run through
   `urlencode` before being spliced into the RTSP URL so special
   characters (`@`, `#`, etc.) in a camera password don't break the URL.

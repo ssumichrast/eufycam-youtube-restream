@@ -2,7 +2,7 @@ services:
   eufycam-youtube-restream:
     # Pulls the published image by default. `docker compose up --build` still
     # builds from this checkout instead, for local development.
-    image: ghcr.io/ssumichrast/eufycam-youtube-restream:latest
+    image: ghcr.io/ssumichrast/eufycam-youtube-restream:edge
     build: .
     container_name: eufycam-youtube-restream
     restart: unless-stopped
