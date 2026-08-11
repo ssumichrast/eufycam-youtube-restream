@@ -33,7 +33,7 @@ spec:
         - name: restream
           # Pin to a released version rather than :latest so a redeploy is
           # never a surprise upgrade.
-          image: ghcr.io/ssumichrast/eufycam-youtube-restream:1.0.0
+          image: ghcr.io/ssumichrast/eufycam-youtube-restream:1.0.1
           imagePullPolicy: IfNotPresent
 
           # The five required variables, plus any optional overrides.
