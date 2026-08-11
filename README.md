@@ -111,6 +111,14 @@ that maps camera audio, and CI fails the build if one is reintroduced.
 Pin to a `1.2.3` or `1.2` tag for anything you care about; `edge` moves on
 every merge.
 
+Always pull by the **full** name — `docker pull` and Docker Desktop both
+default to Docker Hub, where this image does not exist:
+
+```bash
+docker pull ghcr.io/ssumichrast/eufycam-youtube-restream:latest   # correct
+docker pull eufycam-youtube-restream:latest                       # 404
+```
+
 ## Kubernetes
 
 Manifests live in [`deploy/k8s/`](deploy/k8s/) — a Secret for the five required

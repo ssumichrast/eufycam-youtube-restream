@@ -155,6 +155,14 @@ tags and moves `:latest`:
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
+**The `v` prefix is required and fails silently without it.**
+`release.yml` triggers on `tags: ["v*.*.*"]`, so a tag pushed as
+`1.0.0` matches nothing: no workflow runs, no image is published, and
+GitHub reports no error anywhere. The only symptom is a 404 when
+something later tries to pull that version. If a release seems to have
+vanished, check `git ls-remote --tags origin` for a missing `v` before
+looking anywhere else.
+
 ## Things to avoid
 
 - Don't commit `.env` — it holds the camera password and YouTube
