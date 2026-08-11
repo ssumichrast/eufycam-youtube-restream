@@ -146,6 +146,57 @@ changes without either:
    an actual camera as a final check before merging something that
    touches the ffmpeg invocation itself.
 
+### Measuring an ffmpeg change instead of arguing about it
+
+When a change affects the ffmpeg invocation and a camera *is* reachable,
+compare fixed-length captures and count warnings rather than eyeballing
+logs. This is what caught every real finding in this project:
+
+```bash
+ffmpeg -hide_banner -loglevel warning -y \
+  -rtsp_transport tcp -timeout 15000000 -i "$URL" \
+  <the args under test> -t 30 -f flv out.flv 2>out.log
+grep -c 'backward in time' out.log
+grep -c 'Non-monotonic'    out.log
+```
+
+Useful companions: `ffprobe -show_entries stream=...` to confirm the
+output actually has the streams you intended, and
+`ffmpeg -i out.flv -af volumedetect -f null -` to prove an audio track
+is silent (`mean_volume: -91 dB`) rather than assuming it.
+
+Two things this method has already settled here, both of which cost
+real time and would otherwise get re-litigated from memory:
+
+- **`-use_wallclock_as_timestamps 1` is not the fix for backward audio
+  timestamps.** It is the widely-suggested remedy and it measured *six
+  times worse* on a real camera (94 backward / 218 non-monotonic in 30s,
+  against a 36 / 35 baseline). `-af aresample=async=1:first_pts=0` took
+  it to zero. Neither is in the tree today — camera audio was removed
+  entirely — but don't reach for wallclock timestamps if this ever comes
+  back.
+- **Warnings that fire once at startup are not the same as warnings that
+  repeat.** `Timestamps are unset in a packet for stream 0` appears once
+  per ffmpeg start with `-c:v copy` from RTSP (the first packet lands
+  before clock sync) and is harmless. Count occurrences before treating
+  a log line as a problem.
+
+### Debugging RTSP auth
+
+A `401` tells you very little on its own. Get the exchange with:
+
+```bash
+ffprobe -v debug -rtsp_transport tcp -i "$URL" 2>&1 | grep -E "CSeq|401|WWW-Auth"
+```
+
+If the failing `DESCRIBE` is **CSeq 3**, ffmpeg already retried with
+credentials and the camera rejected them — the values are wrong, and no
+amount of URL-encoding or transport fiddling will help. CSeq 2 with no
+retry means the challenge itself is the problem. `OPTIONS` returning 200
+proves host, port and reachability are fine, so a 401 also rules out the
+port being wrong. Auth realms that change per connection are normal here
+and irrelevant under Basic auth.
+
 ## Releasing
 
 Push to `main` publishes `:edge`. A `v*.*.*` tag publishes the semver
@@ -173,3 +224,27 @@ looking anywhere else.
 - Don't add dependencies (Python, Node, etc.) for something bash +
   ffmpeg already handles. The whole point of this project is a small,
   auditable image.
+- Don't reintroduce `coreutils` without a concrete need. It was dropped
+  with the audio probe (its only user was `timeout`); BusyBox covers
+  what the script does now.
+- Don't tell users to `docker pull` or `docker run` a bare image name.
+  It resolves to Docker Hub and 404s. Always the full
+  `ghcr.io/ssumichrast/eufycam-youtube-restream:<tag>` — a container
+  created from a bare-named local build will silently fail every
+  "Update image" and sit on a stale image indefinitely.
+
+## Reference: a known-good camera
+
+Useful for sanity-checking whether a problem is the camera or this
+project. One verified-working setup:
+
+| | |
+|---|---|
+| Video | H.264, 1920×1080, 15 fps |
+| Keyframe interval | ~1.7s (YouTube requires ≤4s) |
+| Audio offered | AAC, 16 kHz mono — present, and deliberately not streamed |
+| Auth | Basic, per-connection realm |
+| Path | `/live0`, port 554 implied |
+
+`VIDEO_MODE=copy` is correct for this: H.264 in, no transcode, near-zero
+CPU. A camera needing `encode` is the exception, not the default.
