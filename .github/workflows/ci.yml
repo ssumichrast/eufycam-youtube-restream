@@ -39,7 +39,7 @@ jobs:
 
       # amd64 only here to keep PR feedback fast; release.yml does multi-arch.
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
