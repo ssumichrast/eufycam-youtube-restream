@@ -160,6 +160,30 @@ itself).
 - **Stream never goes live / ffmpeg loops immediately** — check the logs for
   the actual ffmpeg error. Wrong credentials or an unreachable RTSP address
   are the most common causes; test the URL locally first with `ffplay` or VLC.
+- **`401 Unauthorized` from the camera — check `I` vs `l` first.** Eufy
+  generates 16-character credentials mixing uppercase, lowercase, digits and
+  underscores, and the app's font renders capital `I` and lowercase `l`
+  identically. Transcribing one wrong is by far the most common cause of a
+  401, and it looks exactly like a stale password. **Copy-paste from the app;
+  don't retype.** To confirm the credentials themselves are being rejected
+  rather than mangled in transit, run:
+
+  ```bash
+  ffprobe -v debug -rtsp_transport tcp -timeout 5000000 "rtsp://USER:PASS@CAMERA/live0" 2>&1 | grep -E "CSeq|401"
+  ```
+
+  If the failing `DESCRIBE` is **CSeq 3**, ffmpeg already retried *with* your
+  credentials and the camera turned them down — the values are wrong. If it
+  fails at CSeq 2 with no retry, the problem is the challenge itself. Note the
+  auth realm changes on every connection; that's normal for these cameras and
+  harmless with Basic auth.
+- **Docker Desktop says `404 Not Found` when pulling or updating** — you're
+  using a bare image name. `eufycam-youtube-restream:latest` resolves to
+  Docker Hub, which doesn't host this image. Always use the full
+  `ghcr.io/ssumichrast/eufycam-youtube-restream:latest`. This bites hardest on
+  a container *created* from a bare-named local build: Docker Desktop's
+  "Update image" then silently 404s forever and you stay on a stale image
+  without realizing it. Running via `compose.yaml` avoids this entirely.
 - **Stream goes dark and never comes back** — the logs should show ffmpeg
   exiting and restarting every `IO_TIMEOUT_US`. If they show nothing at all,
   ffmpeg is wedged on a half-open connection; lower `IO_TIMEOUT_US` so it
