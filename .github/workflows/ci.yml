@@ -15,7 +15,7 @@ jobs:
     name: Lint shell + Dockerfile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: ShellCheck entrypoint
         uses: ludeeus/action-shellcheck@master
@@ -33,9 +33,9 @@ jobs:
     name: Build image (no push)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # amd64 only here to keep PR feedback fast; release.yml does multi-arch.
       - name: Build
